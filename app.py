@@ -84,51 +84,50 @@ if "net_greeks" in st.session_state:
     st.markdown("---")
     
     # -------------------------------------------------------------
-# Optimization: Minimize hedge cost subject to Greek targets
-# -------------------------------------------------------------
-def hedge_cost(x, target_delta=0, target_gamma=0, target_vega=0):
-    """Cost of hedge position x (contracts per instrument)"""
-    hedge_greeks = hedges[["Delta", "Gamma", "Vega"]].values @ x
-    greek_error = (
-        (hedge_greeks[0] - target_delta)**2 +
-        10 * (hedge_greeks[1] - target_gamma)**2 +
-        5 * (hedge_greeks[2] - target_vega)**2
-    )
-    cost = (hedges["Cost"] * np.abs(x)).sum()
-    return cost + 100 * greek_error
-
-# Scenario 1: Delta-neutral
-res_delta = minimize(
-    hedge_cost, 
-    x0=np.zeros(len(hedges)), 
-    args=(net_greeks['delta'], 0, 0),
-    bounds=[(-50, 50)] * len(hedges),
-    method="SLSQP",
-    options={'disp': False}
-)
-
-# Scenario 2: Delta + Vega neutral
-res_dv = minimize(
-    hedge_cost, 
-    x0=np.zeros(len(hedges)), 
-    args=(net_greeks['delta'], 0, net_greeks['vega']),
-    bounds=[(-50, 50)] * len(hedges),
-    method="SLSQP",
-    options={'disp': False}
-)
-
-# Scenario 3: Full Greek neutral (Δ, Γ, Vega)
-res_full = minimize(
-    hedge_cost, 
-    x0=np.zeros(len(hedges)), 
-    args=(net_greeks['delta'], net_greeks['gamma'], net_greeks['vega']),
-    bounds=[(-50, 50)] * len(hedges),
-    method="SLSQP",
-    options={'disp': False}
-)
-
+    # Optimization: Minimize hedge cost subject to Greek targets
+    # -------------------------------------------------------------
+    def hedge_cost(x, target_delta=0, target_gamma=0, target_vega=0):
+        """Cost of hedge position x (contracts per instrument)"""
+        hedge_greeks = hedges[["Delta", "Gamma", "Vega"]].values @ x
+        greek_error = (
+            (hedge_greeks[0] - target_delta)**2 +
+            10 * (hedge_greeks[1] - target_gamma)**2 +
+            5 * (hedge_greeks[2] - target_vega)**2
+        )
+        cost = (hedges["Cost"] * np.abs(x)).sum()
+        return cost + 100 * greek_error  # Penalize Greek mismatch
     
-    # Results table
+    # Scenario 1: Delta-neutral
+    res_delta = minimize(
+        hedge_cost, 
+        x0=np.zeros(len(hedges)), 
+        args=(net_greeks['delta'], 0, 0),
+        bounds=[(-50, 50)] * len(hedges),
+        method="SLSQP",
+        options={'disp': False}
+    )
+    
+    # Scenario 2: Delta + Vega neutral
+    res_dv = minimize(
+        hedge_cost, 
+        x0=np.zeros(len(hedges)), 
+        args=(net_greeks['delta'], 0, net_greeks['vega']),
+        bounds=[(-50, 50)] * len(hedges),
+        method="SLSQP",
+        options={'disp': False}
+    )
+    
+    # Scenario 3: Full Greek neutral (Δ, Γ, Vega)
+    res_full = minimize(
+        hedge_cost, 
+        x0=np.zeros(len(hedges)), 
+        args=(net_greeks['delta'], net_greeks['gamma'], net_greeks['vega']),
+        bounds=[(-50, 50)] * len(hedges),
+        method="SLSQP",
+        options={'disp': False}
+    )
+    
+    # Results table - FIXED INDENTATION
     hedge_scenarios = pd.DataFrame({
         "Scenario": ["Delta-Neutral", "Delta+Vega Neutral", "Full Greek Neutral"],
         "Hedge Contracts": [
@@ -142,46 +141,19 @@ res_full = minimize(
             f"${(hedges['Cost'] * np.abs(res_full.x)).sum():.0f}"
         ],
         "Residual Δ": [
-            f"{(hedges['Delta'] @ res_delta.x - net_greeks['delta']):.1f}",
-            f"{(hedges['Delta'] @ res_dv.x - net_greeks['delta']):.1f}",
-            f"{(hedges['Delta'] @ res_full.x - net_greeks['delta']):.1f}"
+            f"{(hedges['Delta'].values @ res_delta.x - net_greeks['delta']):.1f}",
+            f"{(hedges['Delta'].values @ res_dv.x - net_greeks['delta']):.1f}",
+            f"{(hedges['Delta'].values @ res_full.x - net_greeks['delta']):.1f}"
         ],
         "Residual Vega": [
-            f"{(hedges['Vega'] @ res_delta.x):.2f}",
-            f"{(hedges['Vega'] @ res_dv.x - net_greeks['vega']):.2f}",
-            f"{(hedges['Vega'] @ res_full.x - net_greeks['vega']):.2f}"
+            f"{(hedges['Vega'].values @ res_delta.x):.2f}",
+            f"{(hedges['Vega'].values @ res_dv.x - net_greeks['vega']):.2f}",
+            f"{(hedges['Vega'].values @ res_full.x - net_greeks['vega']):.2f}"
         ]
     })
     
     st.subheader("🏆 Best Hedge Scenarios")
     st.dataframe(hedge_scenarios, use_container_width=True)
-    
-    # -------------------------------------------------------------
-    # Hedge efficiency visualization
-    # -------------------------------------------------------------
-    st.subheader("📈 Hedge Efficiency")
-    
-    fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=("Delta", "Gamma", "Vega", "Theta Impact"),
-        specs=[[{"type": "bar"}, {"type": "bar"}], 
-               [{"type": "bar"}, {"type": "scatter"}]]
-    )
-    
-    scenarios = ["Portfolio", "Δ-Neutral", "Δ+Vega", "Full Neutral"]
-    delta_res = [net_greeks['delta'], 
-                hedges['Delta'] @ res_delta.x - net_greeks['delta'],
-                hedges['Delta'] @ res_dv.x - net_greeks['delta'],
-                hedges['Delta'] @ res_full.x - net_greeks['delta']]
-    
-    fig.add_trace(
-        go.Bar(x=scenarios, y=delta_res, name="Residual Δ", marker_color="red"),
-        row=1, col=1
-    )
-    
-    # Add other Greeks...
-    fig.update_layout(height=600, showlegend=False)
-    st.plotly_chart(fig, use_container_width=True)
     
     # -------------------------------------------------------------
     # Trade recommendations
@@ -194,7 +166,8 @@ res_full = minimize(
     for i, (inst, qty) in enumerate(zip(hedge_insts, best_hedge)):
         if abs(qty) > 0.1:
             direction = "BUY" if qty > 0 else "SELL"
-            st.write(f"**{direction} {abs(qty):.0f} {inst}** (${hedges['Cost'][i]*abs(qty):.0f})")
+            cost = hedges['Cost'][i] * abs(qty)
+            st.success(f"**{direction} {abs(qty):.0f} {inst}** (${cost:.0f})")
 
 else:
     st.info("👆 Enter your portfolio above and click **Scan Hedges**")
