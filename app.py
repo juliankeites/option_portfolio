@@ -197,4 +197,17 @@ if "net_greeks" in st.session_state:
         if abs(call_strike - put_strike) < 0.1:  # Same strike
             synthetic_delta = (calls['effective_delta'].iloc[0] * calls['Position_bbl'].iloc[0] + 
                              puts['effective_delta'].iloc[0] * puts['Position_bbl'].iloc[0])
-            st.success(f"✅ **Detected Synthetic
+            st.success(f"✅ **Detected Synthetic Future**: Long {calls['Position_bbl'].iloc[0]:,}bbl Call {call_strike} + Short {puts['Position_bbl'].iloc[0]:,}bbl Put {put_strike}")
+            st.info(f"**Net Delta**: {synthetic_delta:,.0f} bbl equivalent")
+            st.info("**Recommendation**: Hedge with **WTI Futures** (already prioritized above)")
+    
+    st.subheader("💡 Recommended Trades")
+    best_hedge = res_full.x.round(0).astype(int)
+    for i, (name, qty) in enumerate(zip(hedge_names, best_hedge)):
+        if abs(qty) > 10:
+            direction = "BUY" if qty > 0 else "SELL"
+            cost = hedge_costs[i] * abs(qty)
+            st.success(f"**{direction} {abs(qty):,} bbl {name}** (${cost:,.0f})")
+
+else:
+    st.info("👆 Enter portfolio and click **Scan Hedges**")
