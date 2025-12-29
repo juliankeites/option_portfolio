@@ -2,8 +2,6 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 st.set_page_config(page_title="Option Portfolio Hedge Scanner", layout="wide")
 
@@ -40,7 +38,6 @@ portfolio_data = st.sidebar.data_editor(
 )
 
 if st.sidebar.button("🚀 Scan Hedges", type="primary"):
-    # Calculate net Greeks
     df_port = pd.DataFrame(portfolio_data)
     df_port = df_port.dropna(subset=["Contracts"])
     
@@ -49,21 +46,22 @@ if st.sidebar.button("🚀 Scan Hedges", type="primary"):
     net_vega = (df_port["Vega"] * df_port["Contracts"]).sum()
     net_theta = (df_port["Theta"] * df_port["Contracts"]).sum()
     
-    # Available hedge instruments
     hedges = pd.DataFrame({
         "Instrument": ["WTI Future", "Call 82.5", "Put 77.5", "Call 85"],
         "Delta": [1.0, 0.55, -0.25, 0.15],
         "Gamma": [0.0, 0.025, 0.035, 0.01],
         "Vega": [0.0, 0.18, 0.14, 0.06],
         "Theta": [0.0, -0.06, -0.05, -0.02],
-        "Cost": [0.0, 1.80, 1.45, 0.75],  # $/contract
+        "Cost": [0.0, 1.80, 1.45, 0.75],
     })
     
     st.session_state.net_greeks = {
         "delta": net_delta, "gamma": net_gamma, 
         "vega": net_vega, "theta": net_theta
     }
-    st.session_state.hedges = hedges
+    st.session_state.hedges = hedges.to_dict('records')  # Pass as dict
+    st.session_state.hedge_greeks = hedges[["Delta", "Gamma", "Vega"]].values
+    st.session_state.hedge_costs = hedges["Cost"].values
     st.session_state.portfolio = df_port
     st.rerun()
 
@@ -72,8 +70,8 @@ if st.sidebar.button("🚀 Scan Hedges", type="primary"):
 # -------------------------------------------------------------
 if "net_greeks" in st.session_state:
     net_greeks = st.session_state.net_greeks
-    hedges = st.session_state.hedges
-    portfolio = st.session_state.portfolio
+    hedge_greeks = np.array(st.session_state.hedge_greeks)
+    hedge_costs = np.array(st.session_state.hedge_costs)
     
     col1, col2, col3, col4 = st.columns(4)
     with col1: st.metric("Net Δ", f"{net_greeks['delta']:.1f}")
@@ -84,90 +82,90 @@ if "net_greeks" in st.session_state:
     st.markdown("---")
     
     # -------------------------------------------------------------
-    # Optimization: Minimize hedge cost subject to Greek targets
+    # FIXED Optimization - pass arrays explicitly
     # -------------------------------------------------------------
-    def hedge_cost(x, target_delta=0, target_gamma=0, target_vega=0):
-        """Cost of hedge position x (contracts per instrument)"""
-        hedge_greeks = hedges[["Delta", "Gamma", "Vega"]].values @ x
+    def hedge_cost(x, target_delta, target_gamma, target_vega):
+        hedge_delta = hedge_greeks[:, 0] @ x
+        hedge_gamma = hedge_greeks[:, 1] @ x  
+        hedge_vega = hedge_greeks[:, 2] @ x
+        
         greek_error = (
-            (hedge_greeks[0] - target_delta)**2 +
-            10 * (hedge_greeks[1] - target_gamma)**2 +
-            5 * (hedge_greeks[2] - target_vega)**2
+            (hedge_delta - target_delta)**2 +
+            10 * (hedge_gamma - target_gamma)**2 +
+            5 * (hedge_vega - target_vega)**2
         )
-        cost = (hedges["Cost"] * np.abs(x)).sum()
-        return cost + 100 * greek_error  # Penalize Greek mismatch
+        cost = np.abs(hedge_costs @ x)
+        return cost + 100 * greek_error
     
-    # Scenario 1: Delta-neutral
+    n_hedges = hedge_greeks.shape[0]
+    
+    # Delta-neutral
     res_delta = minimize(
         hedge_cost, 
-        x0=np.zeros(len(hedges)), 
+        x0=np.zeros(n_hedges), 
         args=(net_greeks['delta'], 0, 0),
-        bounds=[(-50, 50)] * len(hedges),
+        bounds=[(-50, 50)] * n_hedges,
         method="SLSQP",
-        options={'disp': False}
+        options={'disp': False, 'maxiter': 100}
     )
     
-    # Scenario 2: Delta + Vega neutral
+    # Delta + Vega neutral
     res_dv = minimize(
         hedge_cost, 
-        x0=np.zeros(len(hedges)), 
+        x0=np.zeros(n_hedges), 
         args=(net_greeks['delta'], 0, net_greeks['vega']),
-        bounds=[(-50, 50)] * len(hedges),
+        bounds=[(-50, 50)] * n_hedges,
         method="SLSQP",
-        options={'disp': False}
+        options={'disp': False, 'maxiter': 100}
     )
     
-    # Scenario 3: Full Greek neutral (Δ, Γ, Vega)
+    # Full Greek neutral
     res_full = minimize(
         hedge_cost, 
-        x0=np.zeros(len(hedges)), 
+        x0=np.zeros(n_hedges), 
         args=(net_greeks['delta'], net_greeks['gamma'], net_greeks['vega']),
-        bounds=[(-50, 50)] * len(hedges),
+        bounds=[(-50, 50)] * n_hedges,
         method="SLSQP",
-        options={'disp': False}
+        options={'disp': False, 'maxiter': 100}
     )
     
-    # Results table - FIXED INDENTATION
+    hedge_names = ["WTI Future", "Call 82.5", "Put 77.5", "Call 85"]
+    
+    # Results table
     hedge_scenarios = pd.DataFrame({
         "Scenario": ["Delta-Neutral", "Delta+Vega Neutral", "Full Greek Neutral"],
         "Hedge Contracts": [
-            f"{res_delta.x.round(1)}",
-            f"{res_dv.x.round(1)}", 
-            f"{res_full.x.round(1)}"
+            " | ".join([f"{h}: {res_delta.x[i]:.1f}" for i, h in enumerate(hedge_names)]),
+            " | ".join([f"{h}: {res_dv.x[i]:.1f}" for i, h in enumerate(hedge_names)]),
+            " | ".join([f"{h}: {res_full.x[i]:.1f}" for i, h in enumerate(hedge_names)])
         ],
         "Cost ($)": [
-            f"${(hedges['Cost'] * np.abs(res_delta.x)).sum():.0f}",
-            f"${(hedges['Cost'] * np.abs(res_dv.x)).sum():.0f}",
-            f"${(hedges['Cost'] * np.abs(res_full.x)).sum():.0f}"
+            f"${np.abs(hedge_costs @ res_delta.x):.0f}",
+            f"${np.abs(hedge_costs @ res_dv.x):.0f}",
+            f"${np.abs(hedge_costs @ res_full.x):.0f}"
         ],
         "Residual Δ": [
-            f"{(hedges['Delta'].values @ res_delta.x - net_greeks['delta']):.1f}",
-            f"{(hedges['Delta'].values @ res_dv.x - net_greeks['delta']):.1f}",
-            f"{(hedges['Delta'].values @ res_full.x - net_greeks['delta']):.1f}"
+            f"{(hedge_greeks[:,0] @ res_delta.x - net_greeks['delta']):.1f}",
+            f"{(hedge_greeks[:,0] @ res_dv.x - net_greeks['delta']):.1f}",
+            f"{(hedge_greeks[:,0] @ res_full.x - net_greeks['delta']):.1f}"
         ],
         "Residual Vega": [
-            f"{(hedges['Vega'].values @ res_delta.x):.2f}",
-            f"{(hedges['Vega'].values @ res_dv.x - net_greeks['vega']):.2f}",
-            f"{(hedges['Vega'].values @ res_full.x - net_greeks['vega']):.2f}"
+            f"{(hedge_greeks[:,2] @ res_delta.x):.2f}",
+            f"{(hedge_greeks[:,2] @ res_dv.x - net_greeks['vega']):.2f}",
+            f"{(hedge_greeks[:,2] @ res_full.x - net_greeks['vega']):.2f}"
         ]
     })
     
     st.subheader("🏆 Best Hedge Scenarios")
     st.dataframe(hedge_scenarios, use_container_width=True)
     
-    # -------------------------------------------------------------
-    # Trade recommendations
-    # -------------------------------------------------------------
-    st.subheader("💡 Recommended Trades")
-    
+    st.subheader("💡 Recommended Trades (Full Greek Neutral)")
     best_hedge = res_full.x.round(1)
-    hedge_insts = hedges["Instrument"].values
-    
-    for i, (inst, qty) in enumerate(zip(hedge_insts, best_hedge)):
+    for i, (name, qty) in enumerate(zip(hedge_names, best_hedge)):
         if abs(qty) > 0.1:
             direction = "BUY" if qty > 0 else "SELL"
-            cost = hedges['Cost'][i] * abs(qty)
-            st.success(f"**{direction} {abs(qty):.0f} {inst}** (${cost:.0f})")
+            cost = hedge_costs[i] * abs(qty)
+            st.success(f"**{direction} {abs(qty):.0f} {name}** (${cost:.0f})")
 
 else:
     st.info("👆 Enter your portfolio above and click **Scan Hedges**")
