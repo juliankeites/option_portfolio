@@ -7,20 +7,12 @@ st.set_page_config(page_title="Option Portfolio Hedge Scanner", layout="wide")
 
 st.title("🎯 Option Portfolio Hedge Scanner")
 st.markdown("**Find optimal futures + option hedges for delta, gamma, vega, theta**")
-st.caption("📏 **Position size in bbl** (1 = 1 bbl, 1000 = 1000 bbl) | 🔒 **Greeks auto-signed**")
+st.caption("📏 **Position size in bbl** | 🔒 **Greeks auto-signed** | ⚡ **Synthetic future detection**")
 
 # -------------------------------------------------------------
 # Portfolio input with Greek sign enforcement
 # -------------------------------------------------------------
 st.sidebar.header("📊 Your Portfolio (per bbl)")
-
-# Define standard Long Greeks (will be flipped for Short)
-default_greeks_long = {
-    "Delta_per_bbl": 0.45,
-    "Gamma_per_bbl": 0.03,
-    "Vega_per_bbl": 0.15,
-    "Theta_per_bbl": -0.05
-}
 
 portfolio_data = st.sidebar.data_editor(
     {
@@ -63,42 +55,38 @@ if st.sidebar.button("🚀 Scan Hedges", type="primary"):
     df_port = pd.DataFrame(portfolio_data)
     df_port = df_port.dropna(subset=["Position_bbl"])
     
-    # ✅ AUTO-ENFORCE GREEK SIGNS based on Long/Short
+    # Auto-enforce Greek signs
     df_port['effective_delta'] = np.where(
         df_port['Long/Short'] == 'Short', 
-        -df_port['Delta_per_bbl'], 
-        df_port['Delta_per_bbl']
+        -df_port['Delta_per_bbl'], df_port['Delta_per_bbl']
     )
     df_port['effective_gamma'] = np.where(
         df_port['Long/Short'] == 'Short', 
-        -df_port['Gamma_per_bbl'], 
-        df_port['Gamma_per_bbl']
+        -df_port['Gamma_per_bbl'], df_port['Gamma_per_bbl']
     )
     df_port['effective_vega'] = np.where(
         df_port['Long/Short'] == 'Short', 
-        -df_port['Vega_per_bbl'], 
-        df_port['Vega_per_bbl']
+        -df_port['Vega_per_bbl'], df_port['Vega_per_bbl']
     )
     df_port['effective_theta'] = np.where(
         df_port['Long/Short'] == 'Short', 
-        -df_port['Theta_per_bbl'], 
-        df_port['Theta_per_bbl']
+        -df_port['Theta_per_bbl'], df_port['Theta_per_bbl']
     )
     
-    # Net Greeks (position size * effective Greeks)
     net_delta = (df_port['effective_delta'] * df_port['Position_bbl']).sum()
     net_gamma = (df_port['effective_gamma'] * df_port['Position_bbl']).sum()
     net_vega = (df_port['effective_vega'] * df_port['Position_bbl']).sum()
     net_theta = (df_port['effective_theta'] * df_port['Position_bbl']).sum()
     
-    # Available hedge instruments (per bbl, entered as LONG basis)
+    # ✅ FIXED: Enhanced hedge instruments with FUTURES PRIORITY
     hedges = pd.DataFrame({
-        "Instrument": ["WTI Future", "Call 82.5", "Put 77.5", "Call 85"],
-        "Delta_per_bbl": [1.0, 0.55, 0.25, 0.15],  # Absolute values (long basis)
-        "Gamma_per_bbl": [0.0, 0.025, 0.035, 0.01],
-        "Vega_per_bbl": [0.0, 0.18, 0.14, 0.06],
-        "Theta_per_bbl": [0.0, -0.06, -0.05, -0.02],
-        "Cost_per_bbl": [0.0, 1.80, 1.45, 0.75],
+        "Instrument": ["WTI Future", "WTI Future (x2)", "Call 82.5", "Put 77.5", "Call 85"],
+        "Delta_per_bbl": [1.0, 2.0, 0.55, 0.25, 0.15],
+        "Gamma_per_bbl": [0.0, 0.0, 0.025, 0.035, 0.01],
+        "Vega_per_bbl": [0.0, 0.0, 0.18, 0.14, 0.06],
+        "Theta_per_bbl": [0.0, 0.0, -0.06, -0.05, -0.02],
+        "Cost_per_bbl": [0.0, 0.0, 1.80, 1.45, 0.75],
+        "Future_priority": [1, 1, 0, 0, 0]  # Futures first
     })
     
     st.session_state.net_greeks = {
@@ -108,6 +96,7 @@ if st.sidebar.button("🚀 Scan Hedges", type="primary"):
     st.session_state.hedge_greeks = hedges[["Delta_per_bbl", "Gamma_per_bbl", "Vega_per_bbl"]].values
     st.session_state.hedge_costs = hedges["Cost_per_bbl"].values
     st.session_state.hedge_names = hedges["Instrument"].values
+    st.session_state.hedge_priority = hedges["Future_priority"].values
     st.session_state.portfolio = df_port
     st.rerun()
 
@@ -119,6 +108,7 @@ if "net_greeks" in st.session_state:
     hedge_greeks = np.array(st.session_state.hedge_greeks)
     hedge_costs = np.array(st.session_state.hedge_costs)
     hedge_names = st.session_state.hedge_names
+    hedge_priority = np.array(st.session_state.hedge_priority)
     df_port = st.session_state.portfolio
     
     col1, col2, col3, col4 = st.columns(4)
@@ -130,43 +120,50 @@ if "net_greeks" in st.session_state:
     st.markdown("---")
     
     # -------------------------------------------------------------
-    # Optimization
+    # FIXED OPTIMIZATION - Futures prioritized
     # -------------------------------------------------------------
     def hedge_cost(x, target_delta, target_gamma, target_vega):
         hedge_delta = hedge_greeks[:, 0] @ x
         hedge_gamma = hedge_greeks[:, 1] @ x  
         hedge_vega = hedge_greeks[:, 2] @ x
         
+        # ✅ PRIORITIZE FUTURES (lower cost for futures)
+        future_cost = np.sum(np.abs(x[hedge_priority == 1]) * 0.1)  # Minimal future cost
+        option_cost = np.sum(np.abs(x[hedge_priority == 0]) * hedge_costs[hedge_priority == 0])
+        total_cost = future_cost + option_cost
+        
         greek_error = (
             (hedge_delta - target_delta)**2 +
             10 * (hedge_gamma - target_gamma)**2 +
             5 * (hedge_vega - target_vega)**2
         )
-        cost = np.abs(hedge_costs @ x)
-        return cost + 100 * greek_error
+        return total_cost + 50 * greek_error  # Reduced penalty
     
     n_hedges = hedge_greeks.shape[0]
     
-    # Scenarios
+    # Test case: Long 80C + Short 80P = Synthetic Future
+    synthetic_delta = 10000 * 0.45 - 10000 * 0.35  # Should be ~1000 delta
+    
+    # Scenarios - FUTURES FIRST
     res_delta = minimize(hedge_cost, x0=np.zeros(n_hedges), 
                         args=(net_greeks['delta'], 0, 0),
-                        bounds=[(-50000, 50000)] * n_hedges, method="SLSQP", 
-                        options={'disp': False, 'maxiter': 100})
+                        bounds=[(-100000, 100000)] * n_hedges, method="SLSQP", 
+                        options={'disp': False, 'maxiter': 200})
     
     res_dv = minimize(hedge_cost, x0=np.zeros(n_hedges), 
                      args=(net_greeks['delta'], 0, net_greeks['vega']),
-                     bounds=[(-50000, 50000)] * n_hedges, method="SLSQP", 
-                     options={'disp': False, 'maxiter': 100})
+                     bounds=[(-100000, 100000)] * n_hedges, method="SLSQP", 
+                     options={'disp': False, 'maxiter': 200})
     
     res_full = minimize(hedge_cost, x0=np.zeros(n_hedges), 
                        args=(net_greeks['delta'], net_greeks['gamma'], net_greeks['vega']),
-                       bounds=[(-50000, 50000)] * n_hedges, method="SLSQP", 
-                       options={'disp': False, 'maxiter': 100})
+                       bounds=[(-100000, 100000)] * n_hedges, method="SLSQP", 
+                       options={'disp': False, 'maxiter': 200})
     
     # Results table
     hedge_scenarios = pd.DataFrame({
-        "Scenario": ["Delta-Neutral", "Delta+Vega Neutral", "Full Greek Neutral"],
-        "Hedge Position (bbl)": [
+        "Scenario": ["Delta-Neutral", "Delta+Vega", "Full Neutral"],
+        "Hedge (bbl)": [
             " | ".join([f"{h}: {res_delta.x[i]:,.0f}" for i, h in enumerate(hedge_names)]),
             " | ".join([f"{h}: {res_dv.x[i]:,.0f}" for i, h in enumerate(hedge_names)]),
             " | ".join([f"{h}: {res_full.x[i]:,.0f}" for i, h in enumerate(hedge_names)])
@@ -176,39 +173,28 @@ if "net_greeks" in st.session_state:
             f"${np.abs(hedge_costs @ res_dv.x):,.0f}",
             f"${np.abs(hedge_costs @ res_full.x):,.0f}"
         ],
-        "Residual Δ (bbl)": [
+        "Res Δ": [
             f"{(hedge_greeks[:,0] @ res_delta.x - net_greeks['delta']):,.0f}",
             f"{(hedge_greeks[:,0] @ res_dv.x - net_greeks['delta']):,.0f}",
             f"{(hedge_greeks[:,0] @ res_full.x - net_greeks['delta']):,.0f}"
-        ],
-        "Residual Vega": [
-            f"{(hedge_greeks[:,2] @ res_delta.x):,.0f}",
-            f"{(hedge_greeks[:,2] @ res_dv.x - net_greeks['vega']):,.0f}",
-            f"{(hedge_greeks[:,2] @ res_full.x - net_greeks['vega']):,.0f}"
         ]
     })
     
     st.subheader("🏆 Best Hedge Scenarios")
     st.dataframe(hedge_scenarios, use_container_width=True)
     
-    st.subheader("💡 Recommended Trades (Full Greek Neutral)")
-    best_hedge = res_full.x.round(0).astype(int)
-    for i, (name, qty) in enumerate(zip(hedge_names, best_hedge)):
-        if abs(qty) > 10:
-            direction = "BUY" if qty > 0 else "SELL"
-            cost = hedge_costs[i] * abs(qty)
-            st.success(f"**{direction} {abs(qty):,} bbl {name}** (${cost:,.0f})")
-
-    # Portfolio summary table - SHOWS EFFECTIVE GREEKS
-    st.subheader("📋 Portfolio (Effective Greeks)")
-    portfolio_summary = df_port[[
-        'Instrument', 'Long/Short', 'Position_bbl', 'Delta_per_bbl', 'effective_delta',
-        'Vega_per_bbl', 'effective_vega', 'Theta_per_bbl', 'effective_theta'
-    ]].rename(columns={
-        'effective_delta': 'Net Δ/ bbl', 'effective_vega': 'Net Vega/ bbl', 
-        'effective_theta': 'Net Θ/ bbl'
-    })
-    st.dataframe(portfolio_summary, use_container_width=True)
-
-else:
-    st.info("👆 Enter your portfolio **Greeks on LONG basis** above and click **Scan Hedges**")
+    # ✅ SYNTHETIC FUTURE DETECTION
+    st.markdown("---")
+    st.subheader("🔍 Synthetic Future Analysis")
+    
+    # Check for Long Call + Short Put same strike
+    calls = df_port[df_port['Instrument'].str.contains('Call', na=False)]
+    puts = df_port[df_port['Instrument'].str.contains('Put', na=False)]
+    
+    if len(calls) > 0 and len(puts) > 0:
+        call_strike = calls['Strike'].iloc[0]
+        put_strike = puts['Strike'].iloc[0]
+        if abs(call_strike - put_strike) < 0.1:  # Same strike
+            synthetic_delta = (calls['effective_delta'].iloc[0] * calls['Position_bbl'].iloc[0] + 
+                             puts['effective_delta'].iloc[0] * puts['Position_bbl'].iloc[0])
+            st.success(f"✅ **Detected Synthetic
