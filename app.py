@@ -84,42 +84,49 @@ if "net_greeks" in st.session_state:
     st.markdown("---")
     
     # -------------------------------------------------------------
-    # Optimization: Minimize hedge cost subject to Greek targets
-    # -------------------------------------------------------------
-    def hedge_cost(x, target_delta=0, target_gamma=0, target_vega=0):
-        """Cost of hedge position x (contracts per instrument)"""
-        hedge_greeks = hedges[["Delta", "Gamma", "Vega"]].values @ x
-        greek_error = (
-            (hedge_greeks[0] - target_delta)**2 +
-            10 * (hedge_greeks[1] - target_gamma)**2 +
-            5 * (hedge_greeks[2] - target_vega)**2
-        )
-        cost = (hedges["Cost"] * np.abs(x)).sum()
-        return cost + 100 * greek_error  # Penalize Greek mismatch
-    
-    # Scenario 1: Delta-neutral
-    res_delta = minimize(
-        hedge_cost, x0=np.zeros(len(hedges)), 
-        args=(net_greeks['delta'], 0, 0),
-        bounds=[(-50, 50)] * len(hedges),
-        method="SLSQP"
+# Optimization: Minimize hedge cost subject to Greek targets
+# -------------------------------------------------------------
+def hedge_cost(x, target_delta=0, target_gamma=0, target_vega=0):
+    """Cost of hedge position x (contracts per instrument)"""
+    hedge_greeks = hedges[["Delta", "Gamma", "Vega"]].values @ x
+    greek_error = (
+        (hedge_greeks[0] - target_delta)**2 +
+        10 * (hedge_greeks[1] - target_gamma)**2 +
+        5 * (hedge_greeks[2] - target_vega)**2
     )
-    
-    # Scenario 2: Delta + Vega neutral
-    res_dv = minimize(
-        hedge_cost, x0=np.zeros(len(hedges)), 
-        args=(net_greeks['delta'], 0, net_greeks['vega']),
-        bounds=[(-50, 50)] * len(hedges),
-        method="SLSQP"
-    )
-    
-    # Scenario 3: Full Greek neutral (Δ, Γ, Vega)
-    res_full = minimize(
-        hedge_cost, x0=np.zeros(len(hedges)), 
-        args=(net_greeks['delta'], net_greeks['gamma'], net_greeks['vega']),
-        bounds=[(-50, 50)] * len(hedges),
-        method="SLSQP"
-    )
+    cost = (hedges["Cost"] * np.abs(x)).sum()
+    return cost + 100 * greek_error
+
+# Scenario 1: Delta-neutral
+res_delta = minimize(
+    hedge_cost, 
+    x0=np.zeros(len(hedges)), 
+    args=(net_greeks['delta'], 0, 0),
+    bounds=[(-50, 50)] * len(hedges),
+    method="SLSQP",
+    options={'disp': False}
+)
+
+# Scenario 2: Delta + Vega neutral
+res_dv = minimize(
+    hedge_cost, 
+    x0=np.zeros(len(hedges)), 
+    args=(net_greeks['delta'], 0, net_greeks['vega']),
+    bounds=[(-50, 50)] * len(hedges),
+    method="SLSQP",
+    options={'disp': False}
+)
+
+# Scenario 3: Full Greek neutral (Δ, Γ, Vega)
+res_full = minimize(
+    hedge_cost, 
+    x0=np.zeros(len(hedges)), 
+    args=(net_greeks['delta'], net_greeks['gamma'], net_greeks['vega']),
+    bounds=[(-50, 50)] * len(hedges),
+    method="SLSQP",
+    options={'disp': False}
+)
+
     
     # Results table
     hedge_scenarios = pd.DataFrame({
