@@ -54,9 +54,9 @@ if positions:
     net_premium = sum(p['bbls'] * p['greeks']['price'] for p in positions)
     
     col1, col2, col3 = st.columns(3)
-    col1.metric("Net Δ (bbl)", f"{net_delta_bbl:.0f}")
-    col2.metric("Net Γ (bbl)", f"{net_gamma_bbl:.1f}")
-    col3.metric("Net Premium", f"${net_premium:.0f}")
+    col1.metric("Portfolio Net Δ (bbl)", f"{net_delta_bbl:.0f}")
+    col2.metric("Portfolio Net Γ (bbl)", f"{net_gamma_bbl:.1f}")
+    col3.metric("Portfolio Net Premium (+ve = Paid, -ve = Received)", f"${net_premium:.0f}")
 
     # Delta Hedge: Pure bbl → bbl
     st.subheader("🔧 Hedge Actions")
