@@ -96,31 +96,33 @@ if positions:
     iv_shock = col2.slider("IV Shock (%)", -10.0, 10.0, 0.0, 0.1)/100
 
     if st.button("🔄 Run Shock & Rehedge", use_container_width=True):
-        # ... existing code ...
-        hedge_pnl = hedge_bbl * spot_shock  # Now uses correct directional hedge
-        total_hedged_pnl = gamma_pnl + hedge_pnl  # Delta cancels, gamma remains
+        new_S = S + spot_shock
+        new_IV = IV + iv_shock
         
-        col1, col2 = st.columns(2)
-        col1.metric("Unhedged P&L", f"${delta_pnl+gamma_pnl:.0f}", delta_color="inverse")
-        col2.metric("Hedged P&L", f"${total_hedged_pnl:.0f}", delta_color="normal")
-
         # Recalculate post-shock
         new_delta_bbl = 0
         for p in positions:
-            new_greeks = black_scholes_greeks(new_S, p['K'], max(T-1/365, 1e-6), r, new_IV, p['type'])
-            new_delta_bbl += p['bbls'] * new_greeks['delta']
+            if p['type'] == 'futures':
+                new_delta_bbl += p['bbls'] * p['greeks']['delta']
+            else:
+                new_greeks = black_scholes_greeks(new_S, p['K'], max(T-1/365, 1e-6), r, new_IV, p['type'])
+                new_delta_bbl += p['bbls'] * new_greeks['delta']
         
-        # P&L Breakdown
-        delta_pnl = net_delta_bbl * spot_shock
-        gamma_pnl = 0.5 * net_gamma_bbl * (spot_shock**2)
-        hedge_pnl = hedge_bbl * spot_shock
-        total_hedged_pnl = gamma_pnl  # Pure gamma scalping profit
+        # P&L Breakdown (ALL bbl math)
+        delta_pnl = net_delta_bbl * spot_shock          # Delta exposure
+        gamma_pnl = 0.5 * net_gamma_bbl * (spot_shock**2)  # Gamma profit
+        hedge_pnl = hedge_bbl * spot_shock              # Futures hedge P&L
+        
+        # RESULTS
+        unhedged_total = delta_pnl + gamma_pnl
+        hedged_total = gamma_pnl  # Delta cancels perfectly
         
         col1, col2 = st.columns(2)
-        col1.metric("Unhedged P&L", f"${delta_pnl+gamma_pnl:.0f}", delta_color="inverse")
-        col2.metric("Hedged P&L", f"${total_hedged_pnl:.0f}", delta_color="normal")
+        col1.metric("Unhedged P&L", f"${unhedged_total:.0f}", delta_color="inverse")
+        col2.metric("Hedged P&L", f"${hedged_total:.0f}", delta_color="normal")
         
-        st.info(f"**New Delta: {new_delta_bbl:.0f} bbl** → Rehedge: Short {new_delta_bbl:.0f} bbl")
+        st.info(f"**New Δ: {new_delta_bbl:.0f} bbl** → Rehedge: {'BUY' if new_delta_bbl < 0 else 'SELL'} {-new_delta_bbl:.0f} bbl")
+
         
         if abs(total_hedged_pnl) > 50:
             st.balloons()
