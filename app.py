@@ -114,7 +114,7 @@ if positions:
         # TRUE P&L: Portfolio value change
         delta_pnl = net_delta_bbl * spot_shock
         gamma_pnl = 0.5 * net_gamma_bbl * (spot_shock**2)
-        vega_pnl = (new_premium - net_premium) * 100
+        vega_pnl = (new_premium - net_premium) 
         theta_pnl = -net_premium * (1/365)
         total_futures_pnl = futures_pnl
         
