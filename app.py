@@ -49,9 +49,9 @@ for i in range(4):
 
 # Calculate Net Greeks (ALL in bbl)
 if positions:
-    net_delta_bbl = sum(p['bbl'] * p['greeks']['delta'] for p in positions)
-    net_gamma_bbl = sum(p['bbl'] * p['greeks']['gamma'] for p in positions)
-    net_premium = sum(p['bbl'] * p['greeks']['price'] for p in positions)
+    net_delta_bbl = sum(p['bbls'] * p['greeks']['delta'] for p in positions)
+    net_gamma_bbl = sum(p['bbls'] * p['greeks']['gamma'] for p in positions)
+    net_premium = sum(p['bbls'] * p['greeks']['price'] for p in positions)
     
     col1, col2, col3 = st.columns(3)
     col1.metric("Net Δ (bbl)", f"{net_delta_bbl:.0f}")
