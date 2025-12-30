@@ -55,15 +55,11 @@ for i in range(4):
         
         if bbls != 0:
             if position_type == "futures":
-                # Futures: pure delta, no gamma/price
                 positions.append({'bbls': bbls, 'type': 'futures', 'K': K, 
                                 'greeks': {'delta': 1.0 if bbls > 0 else -1.0, 'gamma': 0.0, 'price': 0.0}})
             else:
-                # Options
                 greeks = black_scholes_greeks(S, K, T, r, IV, position_type)
                 positions.append({'bbls': bbls, 'type': position_type, 'K': K, 'greeks': greeks})
-
-
 
 # Calculate Net Greeks (ALL in bbl)
 if positions:
@@ -78,13 +74,13 @@ if positions:
 
     # Delta Hedge: DIRECTIONAL (sign matters!)
     st.subheader("🔧 Hedge Actions")
-    hedge_bbl = -net_delta_bbl  # Opposite of net delta
+    hedge_bbl = -net_delta_bbl
     hedge_futures = hedge_bbl / 1000
 
     if hedge_bbl > 0:
-        st.success(f"⚠️ **BUY {hedge_bbl:.0f} bbl** futures ({hedge_futures:.2f} CL contracts)")
+        st.success(f"✅ **BUY {hedge_bbl:.0f} bbl** futures ({hedge_futures:.2f} CL contracts)")
     else:
-        st.error(f"⚠️ **SELL {-hedge_bbl:.0f} bbl** futures ({-hedge_futures:.2f} CL contracts)")
+        st.error(f"❌ **SELL {-hedge_bbl:.0f} bbl** futures ({-hedge_futures:.2f} CL contracts)")
     
     if abs(net_gamma_bbl) > 10:
         st.warning(f"⚠️ Gamma {net_gamma_bbl:.1f} bbl - Consider ATM options hedge")
@@ -95,51 +91,51 @@ if positions:
     spot_shock = col1.slider("Spot Shock ($)", -5.0, 5.0, 0.0, 0.1)
     iv_shock = col2.slider("IV Shock (%)", -10.0, 10.0, 0.0, 0.1)/100
 
- if st.button("🔄 Run Shock & Rehedge", use_container_width=True):
-    new_S = S + spot_shock
-    new_IV = IV + iv_shock
-    
-    # Recalculate post-shock Greeks
-    new_delta_bbl = 0
-    new_gamma_bbl = 0
-    new_premium = 0
-    
-    for p in positions:
-        if p['type'] == 'futures':
-            new_delta_bbl += p['bbls'] * p['greeks']['delta']
-        else:
-            new_greeks = black_scholes_greeks(new_S, p['K'], max(T-1/365, 1e-6), r, new_IV, p['type'])
-            new_delta_bbl += p['bbls'] * new_greeks['delta']
-            new_gamma_bbl += p['bbls'] * new_greeks['gamma']
-            new_premium += p['bbls'] * new_greeks['price']
-    
-    # FULL GREEKS P&L Breakdown
-    delta_pnl = net_delta_bbl * spot_shock                    # Δ × ΔS
-    gamma_pnl = 0.5 * net_gamma_bbl * (spot_shock**2)        # ½Γ × (ΔS)²
-    vega_pnl = net_premium * iv_shock / 0.01                  # Vega ≈ Premium × ΔIV
-    theta_pnl = -net_premium * (1/365)                        # Daily theta decay
-    
-    # RESULTS
-    unhedged_total = delta_pnl + gamma_pnl + vega_pnl + theta_pnl
-    hedged_total = gamma_pnl + vega_pnl + theta_pnl           # Delta cancels
-    
-    col1, col2 = st.columns(2)
-    col1.metric("Unhedged P&L", f"${unhedged_total:.0f}", delta_color="inverse")
-    col2.metric("Hedged P&L", f"${hedged_total:.0f}", delta_color="normal")
-    
-    # P&L Breakdown Table
-    st.subheader("📊 P&L Breakdown")
-    pnl_data = {
-        "Greek": ["Delta", "Gamma", "Vega", "Theta", "Hedged Total"],
-        "P&L ($)": [f"{delta_pnl:.0f}", f"{gamma_pnl:.0f}", f"{vega_pnl:.0f}", f"{theta_pnl:.0f}", f"{hedged_total:.0f}"]
-    }
-    st.table(pnl_data)
-    
-    st.info(f"**New Δ: {new_delta_bbl:.0f} bbl** → Rehedge: {'BUY' if new_delta_bbl < 0 else 'SELL'} {-new_delta_bbl:.0f} bbl")
-    
-    if abs(hedged_total) > 50:
-        st.balloons()
-        st.success("🎉 **Greek-neutral profit!**")
+    if st.button("🔄 Run Shock & Rehedge", use_container_width=True):
+        new_S = S + spot_shock
+        new_IV = IV + iv_shock
+        
+        # Recalculate post-shock Greeks
+        new_delta_bbl = 0
+        new_gamma_bbl = 0
+        new_premium = 0
+        
+        for p in positions:
+            if p['type'] == 'futures':
+                new_delta_bbl += p['bbls'] * p['greeks']['delta']
+            else:
+                new_greeks = black_scholes_greeks(new_S, p['K'], max(T-1/365, 1e-6), r, new_IV, p['type'])
+                new_delta_bbl += p['bbls'] * new_greeks['delta']
+                new_gamma_bbl += p['bbls'] * new_greeks['gamma']
+                new_premium += p['bbls'] * new_greeks['price']
+        
+        # FULL GREEKS P&L Breakdown
+        delta_pnl = net_delta_bbl * spot_shock
+        gamma_pnl = 0.5 * net_gamma_bbl * (spot_shock**2)
+        vega_pnl = net_premium * iv_shock / 0.01
+        theta_pnl = -net_premium * (1/365)
+        
+        # RESULTS
+        unhedged_total = delta_pnl + gamma_pnl + vega_pnl + theta_pnl
+        hedged_total = gamma_pnl + vega_pnl + theta_pnl
+        
+        col1, col2 = st.columns(2)
+        col1.metric("Unhedged P&L", f"${unhedged_total:.0f}", delta_color="inverse")
+        col2.metric("Hedged P&L", f"${hedged_total:.0f}", delta_color="normal")
+        
+        # P&L Breakdown Table
+        st.subheader("📊 P&L Breakdown")
+        pnl_data = {
+            "Greek": ["Delta", "Gamma", "Vega", "Theta", "Hedged Total"],
+            "P&L ($)": [f"{delta_pnl:.0f}", f"{gamma_pnl:.0f}", f"{vega_pnl:.0f}", f"{theta_pnl:.0f}", f"{hedged_total:.0f}"]
+        }
+        st.table(pnl_data)
+        
+        st.info(f"**New Δ: {new_delta_bbl:.0f} bbl** → Rehedge: {'BUY' if new_delta_bbl < 0 else 'SELL'} {-new_delta_bbl:.0f} bbl")
+        
+        if abs(hedged_total) > 50:
+            st.balloons()
+            st.success("🎉 **Greek-neutral profit!**")
 
 # Visuals
 if positions:
@@ -148,8 +144,8 @@ if positions:
     
     deltas, gammas = [], []
     for s in spot_range:
-        pd = sum(p['bbls'] * black_scholes_greeks(s, p['K'], T, r, IV, p['type'])['delta'] for p in positions)
-        pg = sum(p['bbls'] * black_scholes_greeks(s, p['K'], T, r, IV, p['type'])['gamma'] for p in positions)
+        pd = sum(p['bbls'] * black_scholes_greeks(s, p['K'], T, r, IV, p['type'])['delta'] for p in positions if p['type'] != 'futures')
+        pg = sum(p['bbls'] * black_scholes_greeks(s, p['K'], T, r, IV, p['type'])['gamma'] for p in positions if p['type'] != 'futures')
         deltas.append(pd)
         gammas.append(pg)
     
