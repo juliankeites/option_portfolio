@@ -67,14 +67,18 @@ if positions:
     col2.metric("Portfolio Net Γ (bbl)", f"{net_gamma_bbl:.1f}")
     col3.metric("P. Net Premium: +ve=Paid, -ve=Received)", f"${net_premium:.0f}")
 
-    # Delta Hedge: Pure bbl → bbl
+    # Delta Hedge: DIRECTIONAL (sign matters!)
     st.subheader("🔧 Hedge Actions")
-    hedge_bbl = -net_delta_bbl
-    hedge_futures = hedge_bbl / 1000  # Show CL equivalent
-    st.success(f"**Short {hedge_bbl:.0f} bbl** futures ({hedge_futures:.2f} CL contracts)")
+    hedge_bbl = -net_delta_bbl  # Opposite of net delta
+    hedge_futures = hedge_bbl / 1000
+
+    if hedge_bbl > 0:
+        st.success(f"✅ **BUY {hedge_bbl:.0f} bbl** futures ({hedge_futures:.2f} CL contracts)")
+    else:
+        st.error(f"❌ **SELL {-hedge_bbl:.0f} bbl** futures ({-hedge_futures:.2f} CL contracts)")
     
     if abs(net_gamma_bbl) > 10:
-        st.warning(f"⚠️ Gamma {net_gamma_bbl:.0f} bbl - Consider ATM options hedge")
+        st.warning(f"⚠️ Gamma {net_gamma_bbl:.1f} bbl - Consider ATM options hedge")
 
     # Live Practice Rounds
     st.header("⚡ Live Hedging Practice")
@@ -83,9 +87,14 @@ if positions:
     iv_shock = col2.slider("IV Shock (%)", -10.0, 10.0, 0.0, 0.1)/100
 
     if st.button("🔄 Run Shock & Rehedge", use_container_width=True):
-        new_S = S + spot_shock
-        new_IV = IV + iv_shock
+        # ... existing code ...
+        hedge_pnl = hedge_bbl * spot_shock  # Now uses correct directional hedge
+        total_hedged_pnl = gamma_pnl + hedge_pnl  # Delta cancels, gamma remains
         
+        col1, col2 = st.columns(2)
+        col1.metric("Unhedged P&L", f"${delta_pnl+gamma_pnl:.0f}", delta_color="inverse")
+        col2.metric("Hedged P&L", f"${total_hedged_pnl:.0f}", delta_color="normal")
+
         # Recalculate post-shock
         new_delta_bbl = 0
         for p in positions:
