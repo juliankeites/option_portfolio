@@ -91,47 +91,53 @@ if positions:
     spot_shock = col1.slider("Spot Shock ($)", -5.0, 5.0, 0.0, 0.1)
     iv_shock = col2.slider("IV Shock (%)", -10.0, 10.0, 0.0, 0.1)/100
 
-    if st.button("🔄 Run Shock & Rehedge", use_container_width=True):
-        new_S = S + spot_shock
-        new_IV = IV + iv_shock
-        
-        # Recalculate post-shock Greeks
-        new_delta_bbl = 0
-        new_gamma_bbl = 0
-        new_premium = 0
-        
-        for p in positions:
-            if p['type'] == 'futures':
-                new_delta_bbl += p['bbls'] * p['greeks']['delta']
-            else:
-                new_greeks = black_scholes_greeks(new_S, p['K'], max(T-1/365, 1e-6), r, new_IV, p['type'])
-                new_delta_bbl += p['bbls'] * new_greeks['delta']
-                new_gamma_bbl += p['bbls'] * new_greeks['gamma']
-                new_premium += p['bbls'] * new_greeks['price']
-        
-        # FULL GREEKS P&L Breakdown
-        delta_pnl = net_delta_bbl * spot_shock
-        gamma_pnl = 0.5 * net_gamma_bbl * (spot_shock**2)
-        vega_pnl = net_premium * iv_shock / 0.01
-        theta_pnl = -net_premium * (1/365)
-        
-        # RESULTS
-        unhedged_total = delta_pnl + gamma_pnl + vega_pnl + theta_pnl
-        hedged_total = gamma_pnl + vega_pnl + theta_pnl
-        
-        col1, col2 = st.columns(2)
-        col1.metric("Unhedged P&L", f"${unhedged_total:.0f}", delta_color="inverse")
-        col2.metric("Hedged P&L", f"${hedged_total:.0f}", delta_color="normal")
-        
-        # P&L Breakdown Table
-        st.subheader("📊 P&L Breakdown")
-        pnl_data = {
-            "Greek": ["Delta", "Gamma", "Vega", "Theta", "Hedged Total"],
-            "P&L ($)": [f"{delta_pnl:.0f}", f"{gamma_pnl:.0f}", f"{vega_pnl:.0f}", f"{theta_pnl:.0f}", f"{hedged_total:.0f}"]
-        }
-        st.table(pnl_data)
-        
-        st.info(f"**New Δ: {new_delta_bbl:.0f} bbl** → Rehedge: {'BUY' if new_delta_bbl < 0 else 'SELL'} {-new_delta_bbl:.0f} bbl")
+if st.button("🔄 Run Shock & Rehedge", use_container_width=True):
+    new_S = S + spot_shock
+    new_IV = IV + iv_shock
+    
+    # Recalculate post-shock portfolio value
+    new_delta_bbl = 0
+    new_gamma_bbl = 0
+    new_premium = 0
+    futures_pnl = 0  # NEW: Futures spot P&L
+    
+    for p in positions:
+        if p['type'] == 'futures':
+            # Futures: pure spot exposure
+            futures_pnl += p['bbls'] * spot_shock
+            new_delta_bbl += p['bbls'] * p['greeks']['delta']
+        else:
+            # Options: full greeks recalc
+            new_greeks = black_scholes_greeks(new_S, p['K'], max(T-1/365, 1e-6), r, new_IV, p['type'])
+            new_delta_bbl += p['bbls'] * new_greeks['delta']
+            new_gamma_bbl += p['bbls'] * new_greeks['gamma']
+            new_premium += p['bbls'] * new_greeks['price']
+    
+    # TRUE P&L: Portfolio value change
+    delta_pnl = net_delta_bbl * spot_shock           # Options delta
+    gamma_pnl = 0.5 * net_gamma_bbl * (spot_shock**2)  # Options gamma
+    vega_pnl = (new_premium - net_premium) * 100      # True vega (premium change)
+    theta_pnl = -net_premium * (1/365)                # Time decay
+    total_futures_pnl = futures_pnl                   # Futures spot P&L
+    
+    # RESULTS (REAL portfolio P&L)
+    unhedged_total = delta_pnl + gamma_pnl + vega_pnl + theta_pnl + total_futures_pnl
+    hedged_total = gamma_pnl + vega_pnl + theta_pnl + total_futures_pnl  # Delta cancels
+    
+    col1, col2 = st.columns(2)
+    col1.metric("Unhedged P&L", f"${unhedged_total:.0f}", delta_color="inverse")
+    col2.metric("Hedged P&L", f"${hedged_total:.0f}", delta_color="normal")
+    
+    # FULL Breakdown
+    st.subheader("📊 P&L Breakdown")
+    pnl_data = {
+        "Component": ["Options Δ", "Options Γ", "Vega", "Theta", "Futures Spot", "Hedged Total"],
+        "P&L ($)": [f"{delta_pnl:.0f}", f"{gamma_pnl:.0f}", f"{vega_pnl:.0f}", f"{theta_pnl:.0f}", f"{total_futures_pnl:.0f}", f"{hedged_total:.0f}"]
+    }
+    st.table(pnl_data)
+    
+    st.info(f"**New Δ: {new_delta_bbl:.0f} bbl** → Rehedge needed")
+
         
         if abs(hedged_total) > 50:
             st.balloons()
