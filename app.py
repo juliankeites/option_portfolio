@@ -75,7 +75,7 @@ if positions:
     if hedge_bbl > 0:
         st.success(f"✅ **BUY {hedge_bbl:.0f} bbl** futures ({hedge_futures:.2f} CL contracts)")
     else:
-        st.error(f"❌ **SELL {-hedge_bbl:.0f} bbl** futures ({-hedge_futures:.2f} CL contracts)")
+        st.error(f"✅ **SELL {-hedge_bbl:.0f} bbl** futures ({-hedge_futures:.2f} CL contracts)")
     
     if abs(net_gamma_bbl) > 10:
         st.warning(f"⚠️ Gamma {net_gamma_bbl:.1f} bbl - Consider ATM options hedge")
