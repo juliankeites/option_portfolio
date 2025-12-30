@@ -42,10 +42,10 @@ for i in range(3):  # Add up to 3 legs
     with st.expander(f"Leg {i+1}", expanded=(i==0)):
         col1, col2 = st.columns(2)
         with col1:
-            qty = st.number_input(f"Quantity (Contracts x100 bbl)", key=f"qty{i}", value=0, step=1)
+            qty = st.number_input(f"Quantity (Contracts x100 bbl)", key=f"qty{i}", value=0, step=1, format="%d")
             opt_type = st.selectbox("Call/Put", ["call", "put"], key=f"type{i}")
         with col2:
-            K = st.number_input("Strike ($)", value=round(S), key=f"K{i}", step=0.1)
+            K = st.number_input("Strike ($)", value=float(round(S)), key=f"K{i}", step=0.1, format="%.1f")
         
         if qty != 0:
             greeks = black_scholes_greeks(S, K, T, r, IV, opt_type)
