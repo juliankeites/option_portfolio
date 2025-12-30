@@ -65,7 +65,7 @@ if positions:
     col1, col2, col3 = st.columns(3)
     col1.metric("Portfolio Net Δ (bbl)", f"{net_delta_bbl:.0f}")
     col2.metric("Portfolio Net Γ (bbl)", f"{net_gamma_bbl:.1f}")
-    col3.metric("P. Net Premium: +ve=Paid, -ve=Received)", f"${net_premium:.0f}")
+    col3.metric("Net Premium: +ve=Paid/-ve=Received)", f"${net_premium:.0f}")
 
     # Delta Hedge: DIRECTIONAL (sign matters!)
     st.subheader("🔧 Hedge Actions")
