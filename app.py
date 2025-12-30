@@ -139,9 +139,9 @@ if st.button("🔄 Run Shock & Rehedge", use_container_width=True):
     st.info(f"**New Δ: {new_delta_bbl:.0f} bbl** → Rehedge needed")
 
         
-        if abs(hedged_total) > 50:
-            st.balloons()
-            st.success("🎉 **Greek-neutral profit!**")
+if abs(hedged_total) > 50:
+    st.balloons()
+    st.success("🎉 **Greek-neutral profit!**")
 
 # Visuals
 if positions:
