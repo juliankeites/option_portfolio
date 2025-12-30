@@ -30,22 +30,31 @@ r = st.sidebar.number_input("Risk-Free Rate (%)", value=0.0)/100
 T_days = st.sidebar.slider("Days to Expiry", 1, 90, 30)
 T = T_days/365
 
-# Portfolio: PURE BBL INPUT
+# Portfolio: PURE BBL INPUT (LONG/SHORT)
 st.header("📊 Your Portfolio (bbl)")
 positions = []
 for i in range(4):
     with st.expander(f"Position {i+1}", expanded=(i==0)):
         col1, col2, col3 = st.columns(3)
         with col1:
-            bbls = col1.number_input(f"bbl", key=f"bbl{i}", value=0.0, step=10.0, format="%.0f")
+            bbls = col1.number_input(
+                f"bbl (negative=short)", 
+                key=f"bbl{i}", 
+                value=0.0, 
+                step=10.0, 
+                format="%.0f",
+                min_value=None,  # Allow negatives
+                help="Positive=long options, Negative=short options"
+            )
         with col2:
             opt_type = col2.selectbox("Call/Put", ["call", "put"], key=f"type{i}")
         with col3:
             K = col3.number_input("Strike ($)", value=float(round(S)), key=f"K{i}", step=0.1, format="%.1f")
         
-        if bbls > 0:
+        if bbls != 0:  # Allow zero to skip
             greeks = black_scholes_greeks(S, K, T, r, IV, opt_type)
             positions.append({'bbls': bbls, 'type': opt_type, 'K': K, 'greeks': greeks})
+
 
 # Calculate Net Greeks (ALL in bbl)
 if positions:
