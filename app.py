@@ -108,25 +108,25 @@ if positions:
                 new_greeks = black_scholes_greeks(new_S, p['K'], max(T-1/365, 1e-6), r, new_IV, p['type'])
                 new_delta_bbl += p['bbls'] * new_greeks['delta']
         
-        # P&L Breakdown (ALL bbl math)
-        delta_pnl = net_delta_bbl * spot_shock          # Delta exposure
-        gamma_pnl = 0.5 * net_gamma_bbl * (spot_shock**2)  # Gamma profit
-        hedge_pnl = hedge_bbl * spot_shock              # Futures hedge P&L
+        # P&L Breakdown
+        delta_pnl = net_delta_bbl * spot_shock
+        gamma_pnl = 0.5 * net_gamma_bbl * (spot_shock**2)
         
-        # RESULTS
+        # RESULTS (no hedge_pnl needed)
         unhedged_total = delta_pnl + gamma_pnl
-        hedged_total = gamma_pnl  # Delta cancels perfectly
+        hedged_total = gamma_pnl  # Delta perfectly cancels
         
         col1, col2 = st.columns(2)
         col1.metric("Unhedged P&L", f"${unhedged_total:.0f}", delta_color="inverse")
         col2.metric("Hedged P&L", f"${hedged_total:.0f}", delta_color="normal")
         
         st.info(f"**New Δ: {new_delta_bbl:.0f} bbl** → Rehedge: {'BUY' if new_delta_bbl < 0 else 'SELL'} {-new_delta_bbl:.0f} bbl")
-
         
-        if abs(total_hedged_pnl) > 50:
+        # Balloons check (use hedged_total)
+        if abs(hedged_total) > 50:
             st.balloons()
             st.success("🎉 **Gamma scalping profit!**")
+
 
 # Visuals
 if positions:
