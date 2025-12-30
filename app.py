@@ -58,9 +58,9 @@ if positions:
     net_premium = sum(p['qty'] * p['greeks']['price'] * 100 for p in positions)  # 100 barrels per contract
     
     col1, col2, col3 = st.columns(3)
-    col1.metric("Net Delta", f"{net_delta:.2f}")
-    col2.metric("Net Gamma", f"{net_gamma:.4f}")
-    col3.metric("Net Premium", f"${net_premium:.0f}")
+    col1.metric("Portflio - Net Delta", f"{net_delta:.2f}")
+    col2.metric("Portflio - Net Gamma", f"{net_gamma:.4f}")
+    col3.metric("portfolio - Net Premium Paid", f"${net_premium:.0f}")
 
     # Delta Hedge Suggestion
     st.subheader("🔧 Hedge Actions")
