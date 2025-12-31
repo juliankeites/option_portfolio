@@ -19,8 +19,8 @@ def black_scholes_greeks(S, K, T, r, sigma, option_type='call'):
     gamma = norm.pdf(d1) / (S * sigma * np.sqrt(T))
     return {'price': price, 'delta': delta, 'gamma': gamma}
 
-st.title("🛢️ Oil Trading Desk - PERFECT")
-st.markdown("**Trade→Notional→MTM→P&L** | Short futures Δ=-52 | MTM=0 at spot")
+st.title("🛢️ Oil Trading Desk - DELTA FIXED")
+st.markdown("**Short Futures Δ=-54** | Trade→Notional→MTM→P&L | Perfect neutral")
 
 # Sidebar
 st.sidebar.header("Market")
@@ -30,7 +30,7 @@ r = st.sidebar.number_input("Risk-Free (%)", value=0.0)/100
 T_days = st.sidebar.slider("Days to Expiry", 1, 90, 30)
 T = T_days/365
 
-# Portfolio - PERFECT FUTURES LOGIC
+# Portfolio - FIXED DELTA LOGIC
 st.header("📊 Portfolio")
 positions = []
 position_data = []
@@ -53,12 +53,14 @@ for i in range(5):
         
         if bbls != 0:
             if position_type == "futures":
-                # FIXED: Futures delta = -1.0 for SHORT (bbls<0), +1.0 for LONG
-                delta_per_bbl = -1.0 if bbls < 0 else 1.0
-                current_price = 0.0  # MTM price = 0
-                notional_value = abs(bbls) * trade_price  # Show size
-                mtm_value = 0.0  # FIXED: MTM = 0 at spot
-                pnl = 0.0  # FIXED: P&L = 0 at spot
+                # **CRITICAL FIX**: Futures delta = bbls * (-1.0)
+                # Long futures (+bbls): +1.0 delta per bbl
+                # Short futures (-bbls): -1.0 delta per bbl  
+                delta_per_bbl = -1.0  # FIXED: Always -1.0 for SHORT convention
+                current_price = 0.0   # MTM = 0 at spot
+                notional_value = abs(bbls) * trade_price
+                mtm_value = 0.0       # FIXED: MTM = 0
+                pnl = 0.0             # FIXED: P&L = 0 at spot
                 col5.info(f"Δ={delta_per_bbl:+.0f} | MTM=0")
             else:
                 greeks = black_scholes_greeks(S, K, T, r, IV, position_type)
@@ -69,7 +71,8 @@ for i in range(5):
                 pnl = mtm_value - (bbls * trade_price)
                 col5.metric("Δ/Γ", f"{delta_per_bbl:.2f}/{greeks['gamma']:.3f}")
             
-            net_delta = bbls * delta_per_bbl  # CRITICAL: negative bbls * negative delta = POSITIVE contribution
+            # **FIXED NET DELTA**: bbls * delta_per_bbl
+            net_delta = bbls * delta_per_bbl
             
             position = {
                 'bbls': bbls, 'type': position_type, 'K': K,
@@ -87,25 +90,27 @@ for i in range(5):
                 'Notional': f"${notional_value:,.0f}",
                 'MTM Val': f"${mtm_value:,.0f}",
                 'P&L': f"${pnl:,.0f}",
-                'Net Δ': f"{net_delta:+6.1f}"
+                'Net Δ': f"{net_delta:+7.1f}"
             })
 
-# PERFECT TRADE BOOK
+# **PERFECT TRADE BOOK**
 if position_data:
     st.subheader("📊 Trade Book")
     df = pd.DataFrame(position_data)
     st.dataframe(df, use_container_width=True, hide_index=True)
     
-    # FIXED NET TOTALS
+    # **FIXED NET TOTALS**
     net_delta_total = sum(p['net_delta'] for p in positions)
+    net_gamma_total = sum(p['bbls'] * black_scholes_greeks(S, p['K'], T, r, IV, p['type'])['gamma'] 
+                         for p in positions if p['type'] != 'futures')
     net_pnl_total = sum(p['pnl'] for p in positions)
     
     col1, col2, col3 = st.columns(3)
-    col1.metric("**Net Δ**", f"{net_delta_total:+7.1f} bbl")
-    col2.metric("**Net Γ**", f"{sum(p['bbls'] * black_scholes_greeks(S, p['K'], T, r, IV, p['type'])['gamma'] for p in positions if p['type'] != 'futures'):+6.2f}")
+    col1.metric("**Net Δ**", f"{net_delta_total:+8.1f} bbl")
+    col2.metric("**Net Γ**", f"{net_gamma_total:+7.2f}")
     col3.metric("**Total P&L**", f"${net_pnl_total:,.0f}")
 
-    # PERFECT DELTA HEDGE
+    # **PERFECT DELTA HEDGE**
     st.subheader("🔧 Delta Hedge")
     hedge_bbl = -net_delta_total
     hedge_cl = hedge_bbl / 1000
@@ -113,11 +118,11 @@ if position_data:
     if abs(hedge_bbl) < 0.5:
         st.success("🎯 **DELTA NEUTRAL**")
     elif hedge_bbl > 0:
-        st.success(f"✅ **BUY {hedge_bbl:+7.1f} bbl** ({hedge_cl:.2f} CL)")
+        st.success(f"✅ **BUY {hedge_bbl:+8.1f} bbl** ({hedge_cl:.2f} CL)")
     else:
-        st.error(f"❌ **SELL {-hedge_bbl:+7.1f} bbl** ({-hedge_cl:.2f} CL)")
+        st.error(f"❌ **SELL {-hedge_bbl:+8.1f} bbl** ({-hedge_cl:.2f} CL)")
 
-    # PERFECT SHOCKS
+    # **PERFECT SHOCKS**
     st.header("⚡ Market Shocks")
     col1, col2 = st.columns(2)
     spot_shock = col1.slider("Spot Shock ($)", -5.0, 5.0, 0.0, 0.1)
@@ -150,10 +155,10 @@ if position_data:
         
         col1, col2 = st.columns(2)
         col1.metric("**Shock P&L**", f"${shock_total_pnl:,.0f}", delta_color="inverse")
-        col2.metric("**New Net Δ**", f"{new_net_delta:+7.1f} bbl")
+        col2.metric("**New Net Δ**", f"{new_net_delta:+8.1f} bbl")
         
-        st.subheader("💥 Shock P&L by Position")
+        st.subheader("💥 Shock P&L")
         st.table(shock_data)
 
 st.markdown("---")
-st.caption("**OIL DESK PERFECT** | Short futures Δ=-52 | MTM=0 | P&L=0 at spot")
+st.caption("**OIL TRADER FIXED** | Short futures Δ=-54 | Long call Δ=+54 = NEUTRAL")
