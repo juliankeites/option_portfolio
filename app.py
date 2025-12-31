@@ -14,14 +14,14 @@ def black_scholes_greeks(S, K, T, r, sigma, option_type='call'):
         price = S * norm.cdf(d1) - K * np.exp(-r*T) * norm.cdf(d2)
         delta = norm.cdf(d1)
     else:
-        price = K * np.exp(-r*T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+        price = K * norm.cdf(-d2) * np.exp(-r*T) - S * norm.cdf(-d1)
         delta = -norm.cdf(-d1)
     
     gamma = norm.pdf(d1) / (S * sigma * np.sqrt(T))
     return {'price': price, 'delta': delta, 'gamma': gamma}
 
-st.title("🛢️ Oil Trading Desk - PERFECT DELTA")
-st.markdown("**Short -52 futures = -52 delta** | Trade→Notional→MTM→P&L")
+st.title("🛢️ Oil Trading Desk - COMPLETE")
+st.markdown("**Futures P&L FIXED** | Short -52 @ $69.60, Spot $70 = -$20.80 loss")
 
 # Sidebar
 st.sidebar.header("Market")
@@ -31,7 +31,7 @@ r = st.sidebar.number_input("Risk-Free (%)", value=0.0)/100
 T_days = st.sidebar.slider("Days to Expiry", 1, 90, 30)
 T = T_days/365
 
-# Portfolio with CORRECT FUTURES DELTA
+# Portfolio - FIXED FUTURES P&L
 st.header("📊 Portfolio")
 positions = []
 position_data = []
@@ -53,33 +53,33 @@ for i in range(5):
         
         if bbls != 0:
             if position_type == "futures":
-                # **CORRECT FUTURES LOGIC**:
-                # Futures always have delta = +1.0 per bbl
-                # Long futures (+bbls): net_delta = +bbls * 1.0 = +bbls
-                # Short futures (-bbls): net_delta = -bbls * 1.0 = -bbls ✓
-                delta_per_bbl = 1.0  # Always +1.0 for futures!
-                current_price = 0.0
+                # FIXED FUTURES P&L LOGIC
+                delta_per_bbl = 1.0
                 notional_value = abs(bbls) * trade_price
-                mtm_value = 0.0
-                pnl = 0.0
-                col5.info(f"Δ=+1.0/bbl | MTM=0")
+                
+                # MTM Value = bbls × spot (mark-to-market)
+                mtm_value = bbls * S
+                
+                # P&L = MTM - Trade Value = bbls × (spot - trade_price)
+                trade_value = bbls * trade_price
+                pnl = mtm_value - trade_value
+                
+                col5.info(f"Δ=+1.0/bbl | P&L=${pnl:.0f}")
             else:
                 greeks = black_scholes_greeks(S, K, T, r, IV, position_type)
                 delta_per_bbl = greeks['delta']
-                current_price = greeks['price']
                 notional_value = abs(bbls) * trade_price
-                mtm_value = bbls * current_price
+                mtm_value = bbls * greeks['price']
                 pnl = mtm_value - (bbls * trade_price)
                 col5.metric("Δ/Γ", f"{delta_per_bbl:.2f}/{greeks['gamma']:.3f}")
             
-            # **NET DELTA = bbls * delta_per_bbl**
             net_delta = bbls * delta_per_bbl
             
             position = {
                 'bbls': bbls, 'type': position_type, 'K': K,
-                'trade_price': trade_price, 'current_price': current_price,
-                'notional_value': notional_value, 'mtm_value': mtm_value, 
-                'pnl': pnl, 'delta_per_bbl': delta_per_bbl, 'net_delta': net_delta
+                'trade_price': trade_price, 'mtm_value': mtm_value, 
+                'notional_value': notional_value, 'pnl': pnl, 
+                'delta_per_bbl': delta_per_bbl, 'net_delta': net_delta
             }
             positions.append(position)
             
@@ -139,12 +139,13 @@ if position_data:
         
         for p in positions:
             if p['type'] == "futures":
+                # Futures shock P&L = bbls × spot_shock
                 shock_pnl = p['bbls'] * spot_shock
                 new_net_delta += p['net_delta']
             else:
                 new_greeks = black_scholes_greeks(new_S, p['K'], max(T-1/365, 1e-6), r, new_IV, p['type'])
-                new_mtm_value = p['bbls'] * new_greeks['price']
-                shock_pnl = new_mtm_value - p['mtm_value']
+                new_mtm = p['bbls'] * new_greeks['price']
+                shock_pnl = new_mtm - p['mtm_value']
                 new_net_delta += p['bbls'] * new_greeks['delta']
             
             shock_total_pnl += shock_pnl
@@ -160,7 +161,7 @@ if position_data:
         st.subheader("💥 Shock P&L")
         st.table(shock_data)
 
-# P&L Profile Chart
+# P&L Profile
 if positions:
     st.header("📈 P&L Profile")
     spot_range = np.linspace(S*0.85, S*1.15, 50)
@@ -170,11 +171,12 @@ if positions:
         portfolio_pnl = 0
         for p in positions:
             if p['type'] == 'futures':
-                portfolio_pnl += p['bbls'] * (spot - S)
+                # Futures P&L = bbls × (spot - trade_price)
+                portfolio_pnl += p['bbls'] * (spot - p['trade_price'])
             else:
                 greeks = black_scholes_greeks(spot, p['K'], T, r, IV, p['type'])
-                new_value = p['bbls'] * greeks['price']
-                portfolio_pnl += new_value - (p['bbls'] * p['trade_price'])
+                new_mtm = p['bbls'] * greeks['price']
+                portfolio_pnl += new_mtm - (p['bbls'] * p['trade_price'])
         pnls.append(portfolio_pnl)
     
     fig = go.Figure()
@@ -187,4 +189,4 @@ if positions:
     st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("---")
-st.caption("**PERFECT** | Short -52 futures = -52 delta | +100 call = +53.6 delta = NEUTRAL")
+st.caption("**COMPLETE** | Short @$69.60, Spot $70 = -$20.80 loss | Perfect delta/P&L")
