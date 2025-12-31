@@ -21,7 +21,7 @@ def black_scholes_greeks(S, K, T, r, sigma, option_type='call'):
     return {'price': price, 'delta': delta, 'gamma': gamma}
 
 st.title("🛢️ Oil Trading Desk - COMPLETE")
-st.markdown("**Futures P&L FIXED** | Short -52 @ $69.60, Spot $70 = -$20.80 loss")
+st.markdown("J Keites - julian@energovis.co.uk")
 
 # Sidebar
 st.sidebar.header("Market")
