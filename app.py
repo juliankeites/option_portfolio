@@ -27,7 +27,7 @@ st.markdown("**Pure bbl math** - Long/Short Options + Futures | Real oil MM simu
 st.sidebar.header("Market")
 S = st.sidebar.number_input("WTI Spot ($/bbl)", value=70.0, step=0.1)
 IV = st.sidebar.number_input("Implied Vol (%)", value=35.0, min_value=1.0)/100
-r = st.sidebar.number_input("Risk-Free Rate (%)", value=5.0)/100
+r = st.sidebar.number_input("Risk-Free Rate (%)", value=0.0)/100
 T_days = st.sidebar.slider("Days to Expiry", 1, 90, 30)
 T = T_days/365
 
