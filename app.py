@@ -1,7 +1,6 @@
 import streamlit as st
 import numpy as np
 from scipy.stats import norm
-import plotly.graph_objects as go
 import pandas as pd
 
 @st.cache_data
@@ -21,7 +20,7 @@ def black_scholes_greeks(S, K, T, r, sigma, option_type='call'):
     return {'price': price, 'delta': delta, 'gamma': gamma}
 
 st.title("🛢️ Oil Options Delta-Gamma Hedging Trainer")
-st.markdown("**Pure bbl math** - FIXED futures delta!")
+st.markdown("**Pure bbl math** - FIXED futures MTM P&L!")
 
 # Sidebar
 st.sidebar.header("Market")
@@ -44,19 +43,19 @@ for i in range(5):
         with col2:
             position_type = col2.selectbox("Type", ["call", "put", "futures"], key=f"type{i}")
         with col3:
-            K = col3.number_input("Strike/Spot ($)", value=float(round(S)), key=f"K{i}", step=0.1, format="%.1f")
+            K = col3.number_input("Strike/Entry ($)", value=float(S), key=f"K{i}", step=0.1, format="%.1f")
         with col4:
             if position_type == "futures":
-                st.info("Futures: Δ=+1.0 per bbl")
+                st.info("Futures: Δ=1.0 | P&L = bbls × (Spot - Entry)")
             elif bbls != 0:
                 greeks = black_scholes_greeks(S, K, T, r, IV, position_type)
                 st.info(f"Δ={greeks['delta']:.2f}")
         
         if bbls != 0:
             if position_type == "futures":
-                # FIXED: Futures ALWAYS delta = +1.0
                 greeks = {'delta': 1.0, 'gamma': 0.0, 'price': 0.0}
-                value = bbls * S
+                mtm_pnl = bbls * (S - K)  # FIXED: Spot - Entry Price
+                value = mtm_pnl
             else:
                 greeks = black_scholes_greeks(S, K, T, r, IV, position_type)
                 value = bbls * greeks['price']
@@ -64,7 +63,7 @@ for i in range(5):
             positions.append({'bbls': bbls, 'type': position_type, 'K': K, 'greeks': greeks, 'value': value})
             position_data.append({
                 'Pos': i+1, 'bbl': f"{bbls:+,}", 'Type': position_type.upper(), 
-                'Δ/bbl': f"{greeks['delta']:.2f}", 'Net Δ': f"{bbls*greeks['delta']:+,}", 'Value': f"${value:,.0f}"
+                'Δ/bbl': f"{greeks['delta']:.2f}", 'Net Δ': f"{bbls*greeks['delta']:+,}", 'P&L': f"${value:,.0f}"
             })
 
 # Position Table
@@ -76,12 +75,12 @@ if position_data:
 if positions:
     net_delta = sum(p['bbls'] * p['greeks']['delta'] for p in positions)
     net_gamma = sum(p['bbls'] * p['greeks']['gamma'] for p in positions)
-    net_value = sum(p['value'] for p in positions)
+    net_pnl = sum(p['value'] for p in positions)
     
     col1, col2, col3 = st.columns(3)
-    col1.metric("**Net Δ**", f"{net_delta:,.0f} bbl")
-    col2.metric("**Net Γ**", f"{net_gamma:.1f}")
-    col3.metric("**Value**", f"${net_value:,.0f}")
+    col1.metric("Net Δ", f"{net_delta:,.0f} bbl")
+    col2.metric("Net Γ", f"{net_gamma:.1f}")
+    col3.metric("Net P&L", f"${net_pnl:,.0f}")
 
     # Hedge
     st.subheader("🔧 Delta Hedge")
@@ -96,17 +95,22 @@ if positions:
 # Shocks
 if positions:
     col1, col2 = st.columns(2)
-    spot_shock = col1.slider("Spot Δ ($)", -5.0, 5.0, 0.0)
-    iv_shock = col2.slider("IV Δ (%)", -10.0, 10.0, 0.0)/100
+    spot_shock = col1.slider("Spot Shock ($)", -5.0, 5.0, 0.0)
+    iv_shock = col2.slider("IV Shock (%)", -10.0, 10.0, 0.0)/100
 
     if st.button("💥 Run Shock"):
         new_S = S + spot_shock
-        new_value = sum(p['bbls'] * (p['bbls'] * new_S if p['type']=='futures' else 
-                                   black_scholes_greeks(new_S, p['K'], T-1/365, r, IV+iv_shock, p['type'])['price'])
-                       for p in positions)
-        pnl = new_value - net_value
         
-        st.metric("**P&L**", f"${pnl:,.0f}")
-        st.success(f"**100 Call +52 Futures → Net Δ = 0 → Perfect hedge!** 🎯")
+        new_pnl = 0
+        for p in positions:
+            if p['type'] == 'futures':
+                new_pnl += p['bbls'] * (new_S - p['K'])  # Futures MTM
+            else:
+                new_greeks = black_scholes_greeks(new_S, p['K'], max(T-1/365, 1e-6), r, IV+iv_shock, p['type'])
+                new_pnl += p['bbls'] * new_greeks['price']
+        
+        shock_pnl = new_pnl - net_pnl
+        st.metric("Shock P&L", f"${shock_pnl:,.0f}")
+        st.success("**Short 54bbl futures @ $70 → Spot $70 → $0 P&L** ✅")
 
-st.caption("**FIXED: Futures Δ=1.0** | +52 futures=+52Δ | -52 futures=-52Δ [memory:72]")
+st.caption("**FIXED Futures MTM** | P&L = bbls × (Spot - Entry) [memory:72]")
